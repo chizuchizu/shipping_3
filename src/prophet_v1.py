@@ -30,23 +30,29 @@ def plot_model(m, forecast, pars, mode):
     plt.show()
 
 
+def metric(pred, label):
+    max_observed = max(label)
+    return np.exp(- (np.sqrt(mse(pred, label)) / max_observed))
+
+
 train = load_data()
 best_score = 0
 use_all_data = True
 debug = True
 rand = np.random.randint(0, 1000000)
 experiment_name = f"debug_{rand}" if debug else f"{rand}"
-
+year_list = [2019, 2020]
+holidays = make_holidays_df(year_list=year_list, country='UK')
 params = {
     "growth": "logistic",
     # "changepoint_prior_scale": 0.05,
     # "seasonality_prior_scale": 10,
     # "mcmc_samples": 0,
-     "seasonality_mode": "multiplicative",
-     "daily_seasonality": True,
-     "weekly_seasonality": True,
+    "seasonality_mode": "multiplicative",
+    "daily_seasonality": True,
+    "weekly_seasonality": True,
     # "changepoints": ["2020-03-23", "2020-05-11"],
-    # "holidays": lockdown_holidays
+    "holidays": holidays
     #  "prophet_pos": multiplicative
     # "likelihood": "NegBinomial"
 }
@@ -54,6 +60,7 @@ params = {
 
 def run_model():
     all_score = 0
+    all_metric = 0
     for x in ["SC1", "SC2", "SC3"]:
         if not use_all_data:
             if x == "SC2":
@@ -91,9 +98,11 @@ def run_model():
 
             # score = np.exp(-np.sqrt(mse(oof, val_y)))
             score = np.sqrt(mse(oof, val_y))
+            metric_ = metric(oof, val_y)
 
-            print("score: ", score)
+            print("score: ", score, metric_)
             all_score += score
+            all_metric += metric_
 
             pred = forecast[["ds", "yhat"]]
             # if x == "SC2":
@@ -121,15 +130,17 @@ def run_model():
 
             for k, v in params.items():
                 mlflow.log_param(k, v)
-            mlflow.log_param("score", score)
+            mlflow.log_metric("rmse", score)
+            mlflow.log_metric("metric", metric_)
             mlflow.log_artifact("fig1.png")
             mlflow.log_artifact("fig2.png")
             # mlflow.log_param("ProphetPos", prophet_pos)
 
     all_score /= 3
+    all_metric /= 3
     data.loc[data["yhat"] < 0, "yhat"] = 0
     sorted_data = data.sort_values(["ds", "company"])
-    return all_score, sorted_data["yhat"], data
+    return all_score, all_metric, sorted_data["yhat"], data
 
 
 def build_model():
@@ -153,9 +164,9 @@ def build_model():
     return m
 
 
-score, forecast, data = run_model()
+score, metric_, forecast, data = run_model()
 
-print(score)
+print(score, metric_)
 # forecast[forecast < 0] = 0
 forecast.to_csv(f"../outputs/{round(best_score, 5)}_{rand}_prophet.csv", index=False, header=False)
 
@@ -163,7 +174,8 @@ mlflow.set_experiment("all")
 with mlflow.start_run(run_name=f"{rand}"):
     for k, v in params.items():
         mlflow.log_param(k, v)
-    mlflow.log_param("score", score)
+    mlflow.log_metric("rmse", score)
+    mlflow.log_metric("metric", metric_)
     mlflow.log_artifact(f"../outputs/{round(best_score, 5)}_{rand}_prophet.csv")
 
     for x in ["SC1", "SC2", "SC3"]:
