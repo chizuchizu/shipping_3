@@ -53,3 +53,8 @@ params = {
     # "likelihood": "NegBinomial"
 }
 ```
+
+#### What didn't work
+- LGBM modeling(ex. https://www.kaggle.com/kneroma/m5-first-public-notebook-under-0-50)
+- complex parameters
+- features(on Prophet)
